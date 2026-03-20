@@ -1,0 +1,100 @@
+{
+  "cables": {
+    "straight": {
+      "name": "Copper Straight-Through",
+      "pt_type": "Copper Straight-Through",
+      "description": "Used to connect different device types (PC to switch, router to switch)",
+      "use_cases": [
+        "PC to Switch",
+        "Server to Switch",
+        "Switch to Router",
+        "Hub to Switch"
+      ]
+    },
+    "crossover": {
+      "name": "Copper Cross-Over",
+      "pt_type": "Copper Cross-Over",
+      "description": "Used to connect same device types directly (switch to switch, PC to PC)",
+      "use_cases": [
+        "Switch to Switch",
+        "Router to Router",
+        "PC to PC",
+        "Hub to Hub"
+      ]
+    },
+    "serial_dce": {
+      "name": "Serial DCE",
+      "pt_type": "Serial DCE",
+      "description": "Serial WAN connection - DCE end provides clock signal",
+      "use_cases": [
+        "Router Serial to Router Serial (WAN links)"
+      ]
+    },
+    "serial_dte": {
+      "name": "Serial DTE",
+      "pt_type": "Serial DTE",
+      "description": "Serial WAN connection - DTE end receives clock signal",
+      "use_cases": [
+        "Router Serial to Router Serial (DTE side)"
+      ]
+    },
+    "console": {
+      "name": "Console",
+      "pt_type": "Console",
+      "description": "Out-of-band management connection",
+      "use_cases": [
+        "PC RS-232 to Router/Switch Console"
+      ]
+    },
+    "fiber": {
+      "name": "Fiber",
+      "pt_type": "Fiber",
+      "description": "Fiber optic connection for long-distance/high-speed links",
+      "use_cases": [
+        "Switch to Switch (long distance)",
+        "Router to Router (high speed)"
+      ]
+    },
+    "usb": {
+      "name": "USB",
+      "pt_type": "USB",
+      "description": "USB connection for console access",
+      "use_cases": [
+        "PC USB to Router/Switch USB Console"
+      ]
+    }
+  },
+  "auto_selection_rules": {
+    "description": "Rules for automatic cable selection when cable_type is 'auto'",
+    "rules": [
+      {
+        "condition": "Both devices are routers",
+        "cable": "crossover"
+      },
+      {
+        "condition": "Both devices are switches",
+        "cable": "crossover"
+      },
+      {
+        "condition": "Router to switch",
+        "cable": "straight"
+      },
+      {
+        "condition": "PC/Server/Laptop to switch",
+        "cable": "straight"
+      },
+      {
+        "condition": "PC/Server/Laptop to hub",
+        "cable": "straight"
+      },
+      {
+        "condition": "Serial port to serial port",
+        "cable": "serial_dce"
+      },
+      {
+        "condition": "Console port",
+        "cable": "console"
+      }
+    ]
+  }
+}

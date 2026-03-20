@@ -1,0 +1,257 @@
+{
+  "templates": {
+    "simple_lan": {
+      "name": "LAN Simple",
+      "description": "1 router + 1 switch + N PCs connected with basic IP configuration",
+      "params": {
+        "num_pcs": {
+          "type": "integer",
+          "default": 3,
+          "min": 1,
+          "max": 10,
+          "description": "Number of PCs to add"
+        },
+        "network": {
+          "type": "string",
+          "default": "192.168.1.0/24",
+          "description": "Network address in CIDR notation"
+        },
+        "router_name": {
+          "type": "string",
+          "default": "R1",
+          "description": "Router device name"
+        },
+        "switch_name": {
+          "type": "string",
+          "default": "S1",
+          "description": "Switch device name"
+        }
+      },
+      "devices": [
+        {"name": "{router_name}", "type": "2911", "x": 300, "y": 100},
+        {"name": "{switch_name}", "type": "2960", "x": 300, "y": 250}
+      ],
+      "connections": [
+        {
+          "from_device": "{router_name}",
+          "from_port": "GigabitEthernet0/0",
+          "to_device": "{switch_name}",
+          "to_port": "GigabitEthernet0/1",
+          "cable": "straight"
+        }
+      ],
+      "pc_connection_port": "FastEthernet0/{n}",
+      "layout": "star"
+    },
+    "wan_two_sites": {
+      "name": "WAN entre 2 sitios",
+      "description": "2 routers connected via serial WAN, each with a LAN (switch + PCs)",
+      "params": {
+        "routing_protocol": {
+          "type": "string",
+          "default": "ospf",
+          "options": ["ospf", "rip", "eigrp", "static"],
+          "description": "Routing protocol to configure"
+        },
+        "site_a_network": {
+          "type": "string",
+          "default": "192.168.1.0/24",
+          "description": "Site A LAN network"
+        },
+        "site_b_network": {
+          "type": "string",
+          "default": "192.168.2.0/24",
+          "description": "Site B LAN network"
+        },
+        "wan_network": {
+          "type": "string",
+          "default": "10.0.0.0/30",
+          "description": "WAN link network"
+        }
+      },
+      "devices": [
+        {"name": "R1", "type": "2911", "x": 150, "y": 200},
+        {"name": "R2", "type": "2911", "x": 500, "y": 200},
+        {"name": "S1", "type": "2960", "x": 150, "y": 350},
+        {"name": "S2", "type": "2960", "x": 500, "y": 350},
+        {"name": "PC1", "type": "PC", "x": 50, "y": 500},
+        {"name": "PC2", "type": "PC", "x": 200, "y": 500},
+        {"name": "PC3", "type": "PC", "x": 400, "y": 500},
+        {"name": "PC4", "type": "PC", "x": 600, "y": 500}
+      ],
+      "connections": [
+        {
+          "from_device": "R1",
+          "from_port": "Serial0/0/0",
+          "to_device": "R2",
+          "to_port": "Serial0/0/0",
+          "cable": "serial_dce"
+        },
+        {
+          "from_device": "R1",
+          "from_port": "GigabitEthernet0/0",
+          "to_device": "S1",
+          "to_port": "GigabitEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "R2",
+          "from_port": "GigabitEthernet0/0",
+          "to_device": "S2",
+          "to_port": "GigabitEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "PC1",
+          "from_port": "FastEthernet0",
+          "to_device": "S1",
+          "to_port": "FastEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "PC2",
+          "from_port": "FastEthernet0",
+          "to_device": "S1",
+          "to_port": "FastEthernet0/2",
+          "cable": "straight"
+        },
+        {
+          "from_device": "PC3",
+          "from_port": "FastEthernet0",
+          "to_device": "S2",
+          "to_port": "FastEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "PC4",
+          "from_port": "FastEthernet0",
+          "to_device": "S2",
+          "to_port": "FastEthernet0/2",
+          "cable": "straight"
+        }
+      ]
+    },
+    "triangle_routers": {
+      "name": "Triángulo de routers",
+      "description": "3 routers in a triangle topology for redundancy exercises",
+      "params": {
+        "routing_protocol": {
+          "type": "string",
+          "default": "ospf",
+          "options": ["ospf", "eigrp", "static"],
+          "description": "Routing protocol to configure"
+        }
+      },
+      "devices": [
+        {"name": "R1", "type": "2911", "x": 300, "y": 100},
+        {"name": "R2", "type": "2911", "x": 150, "y": 350},
+        {"name": "R3", "type": "2911", "x": 450, "y": 350}
+      ],
+      "connections": [
+        {
+          "from_device": "R1",
+          "from_port": "Serial0/0/0",
+          "to_device": "R2",
+          "to_port": "Serial0/0/0",
+          "cable": "serial_dce"
+        },
+        {
+          "from_device": "R1",
+          "from_port": "Serial0/0/1",
+          "to_device": "R3",
+          "to_port": "Serial0/0/0",
+          "cable": "serial_dce"
+        },
+        {
+          "from_device": "R2",
+          "from_port": "Serial0/0/1",
+          "to_device": "R3",
+          "to_port": "Serial0/0/1",
+          "cable": "serial_dce"
+        }
+      ]
+    },
+    "dmz_network": {
+      "name": "Red con DMZ",
+      "description": "Firewall setup with LAN, DMZ, and WAN zones",
+      "params": {
+        "lan_network": {
+          "type": "string",
+          "default": "192.168.1.0/24",
+          "description": "Internal LAN network"
+        },
+        "dmz_network": {
+          "type": "string",
+          "default": "172.16.1.0/24",
+          "description": "DMZ network"
+        },
+        "wan_network": {
+          "type": "string",
+          "default": "203.0.113.0/30",
+          "description": "WAN network"
+        }
+      },
+      "devices": [
+        {"name": "R-WAN", "type": "2911", "x": 500, "y": 100},
+        {"name": "FW", "type": "2911", "x": 300, "y": 200},
+        {"name": "S-DMZ", "type": "2960", "x": 150, "y": 300},
+        {"name": "S-LAN", "type": "2960", "x": 350, "y": 350},
+        {"name": "WebServer", "type": "Server", "x": 100, "y": 450},
+        {"name": "DNS", "type": "Server", "x": 200, "y": 450},
+        {"name": "PC1", "type": "PC", "x": 300, "y": 500},
+        {"name": "PC2", "type": "PC", "x": 420, "y": 500}
+      ],
+      "connections": [
+        {
+          "from_device": "R-WAN",
+          "from_port": "GigabitEthernet0/0",
+          "to_device": "FW",
+          "to_port": "GigabitEthernet0/2",
+          "cable": "straight"
+        },
+        {
+          "from_device": "FW",
+          "from_port": "GigabitEthernet0/0",
+          "to_device": "S-DMZ",
+          "to_port": "GigabitEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "FW",
+          "from_port": "GigabitEthernet0/1",
+          "to_device": "S-LAN",
+          "to_port": "GigabitEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "WebServer",
+          "from_port": "FastEthernet0",
+          "to_device": "S-DMZ",
+          "to_port": "FastEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "DNS",
+          "from_port": "FastEthernet0",
+          "to_device": "S-DMZ",
+          "to_port": "FastEthernet0/2",
+          "cable": "straight"
+        },
+        {
+          "from_device": "PC1",
+          "from_port": "FastEthernet0",
+          "to_device": "S-LAN",
+          "to_port": "FastEthernet0/1",
+          "cable": "straight"
+        },
+        {
+          "from_device": "PC2",
+          "from_port": "FastEthernet0",
+          "to_device": "S-LAN",
+          "to_port": "FastEthernet0/2",
+          "cable": "straight"
+        }
+      ]
+    }
+  }
+}
