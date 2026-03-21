@@ -9,7 +9,7 @@ Write prompts like *"create a WAN network with OSPF between two sites"* and watc
 ## How it works
 
 ```
-You (Claude Desktop / Claude Code)
+Your AI agent (Claude Code, OpenCode, Cursor, Cline...)
         |
         v  natural language prompt
   MCP Server (Python)  <- stdio transport
