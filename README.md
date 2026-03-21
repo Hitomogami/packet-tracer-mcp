@@ -41,17 +41,26 @@ pip install -e .
 
 ## Configuration
 
+Most AI coding tools run MCP servers as a subprocess via `stdio` — no extra setup, just point them at the command. Replace `C:/path/to/packet-tracer-mcp` with your actual path.
+
+---
+
 ### Claude Code
 
-From the project folder:
-
 ```bash
+cd C:/path/to/packet-tracer-mcp
 claude mcp add packet-tracer -- python -m src.server
 ```
 
+---
+
 ### Claude Desktop
 
-Add to `%APPDATA%\Claude\claude_desktop_config.json`:
+```bash
+# No CLI — edit the config file manually
+# Windows: %APPDATA%\Claude\claude_desktop_config.json
+# macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json
+```
 
 ```json
 {
@@ -64,6 +73,116 @@ Add to `%APPDATA%\Claude\claude_desktop_config.json`:
   }
 }
 ```
+
+---
+
+### OpenCode
+
+```bash
+# No CLI — edit the config file manually
+# Windows: %APPDATA%\opencode\config.json
+# macOS/Linux: ~/.config/opencode/config.json
+```
+
+```json
+{
+  "mcp": {
+    "packet-tracer": {
+      "type": "local",
+      "command": ["python", "-m", "src.server"],
+      "cwd": "C:/path/to/packet-tracer-mcp"
+    }
+  }
+}
+```
+
+---
+
+### Cursor
+
+```bash
+# No CLI — edit the config file manually
+# Project-level: .cursor/mcp.json
+# Global: ~/.cursor/mcp.json
+```
+
+```json
+{
+  "mcpServers": {
+    "packet-tracer": {
+      "command": "python",
+      "args": ["-m", "src.server"],
+      "cwd": "C:/path/to/packet-tracer-mcp"
+    }
+  }
+}
+```
+
+---
+
+### Cline (VS Code)
+
+```bash
+# No CLI — use the UI
+# Cline sidebar → Settings (⚙) → MCP Servers → Edit MCP Settings
+```
+
+```json
+{
+  "mcpServers": {
+    "packet-tracer": {
+      "command": "python",
+      "args": ["-m", "src.server"],
+      "cwd": "C:/path/to/packet-tracer-mcp"
+    }
+  }
+}
+```
+
+---
+
+### Continue
+
+```bash
+# No CLI — edit the config file manually
+# ~/.continue/config.json
+```
+
+```json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "python",
+          "args": ["-m", "src.server"],
+          "cwd": "C:/path/to/packet-tracer-mcp"
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+### HTTP mode (advanced)
+
+If you want the server running independently so multiple clients can share it, or if your client only supports HTTP/SSE:
+
+```bash
+python -m src.server --transport http --port 3000
+# Server available at http://127.0.0.1:3000/sse
+```
+
+---
+
+### Not on the list?
+
+This server follows the [MCP specification](https://modelcontextprotocol.io) — it should work with any MCP-compatible client.
+
+Check your client's documentation for how to add a `stdio` MCP server with a custom command. If you get it working with a client not listed here, feel free to **[open a PR or issue](../../issues)** to add it to this list.
 
 ## Packet Tracer setup (once per session)
 

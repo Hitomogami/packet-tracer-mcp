@@ -1,9 +1,13 @@
 """
 Packet Tracer MCP Server — entry point.
 
-Registers all tools and resources, then starts the stdio transport.
+Supports two transports:
+  stdio             — default, used by Claude Desktop / Claude Code
+  http              — HTTP/SSE, used by OpenCode, Cursor, Continue, and any
+                      MCP-compatible client that connects via URL
 """
 
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -70,12 +74,40 @@ async def topology_current(ctx: Context[ServerSession, AppContext]) -> str:
 # ------------------------------------------------------------------ #
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Packet Tracer MCP Server",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport mode. Use 'stdio' for Claude Desktop/Code; 'http' for all other clients.",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind when using HTTP transport.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=3000,
+        help="Port to listen on when using HTTP transport.",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    logger.info("Starting Packet Tracer MCP server")
-    mcp.run(transport="stdio")
+
+    if args.transport == "http":
+        logger.info("Starting Packet Tracer MCP server — HTTP/SSE on %s:%d", args.host, args.port)
+        mcp.run(transport="sse", host=args.host, port=args.port)
+    else:
+        logger.info("Starting Packet Tracer MCP server — stdio")
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
