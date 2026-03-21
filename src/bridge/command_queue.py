@@ -111,7 +111,7 @@ class CommandQueue:
                         success=False,
                         error=(
                             "PTBuilder is not polling. "
-                            "Paste the bootstrap script in Builder Code Editor and click Run."
+                            "Make sure Packet Tracer is open with the MCP bridge PTBuilder module installed."
                         ),
                     )
             try:

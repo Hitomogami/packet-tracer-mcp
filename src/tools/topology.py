@@ -12,6 +12,7 @@ from mcp.server.session import ServerSession
 from pydantic import Field
 
 from ..app import AppContext, mcp
+from .devices import _resolve_device_type
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +114,10 @@ async def pt_apply_template(
     # Resolve template variables in device names
     resolved_devices = []
     for dev in template.get("devices", []):
+        pt_type, _ = _resolve_device_type(dev["type"])
         resolved = {
             "name": _resolve_param(dev["name"], merged_params),
-            "type": dev["type"],
+            "type": pt_type,
             "x": dev.get("x", 100),
             "y": dev.get("y", 100),
         }

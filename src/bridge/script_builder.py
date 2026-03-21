@@ -9,11 +9,29 @@ JS injection.
 """
 
 import json
+import re
+
+# Port name abbreviation → full name prefix
+_PORT_PREFIXES = [
+    (re.compile(r"^Gi(?=\d)"),   "GigabitEthernet"),
+    (re.compile(r"^Fa(?=\d)"),   "FastEthernet"),
+    (re.compile(r"^Se(?=\d)"),   "Serial"),
+    (re.compile(r"^Et(?=\d)"),   "Ethernet"),
+    (re.compile(r"^Te(?=\d)"),   "TenGigabitEthernet"),
+]
 
 
 def _js(value: str) -> str:
     """Safely encode a Python string as a JS string literal."""
     return json.dumps(value)
+
+
+def _expand_port(name: str) -> str:
+    """Expand abbreviated port names: Gi0/0 → GigabitEthernet0/0, Fa0 → FastEthernet0."""
+    for pattern, full in _PORT_PREFIXES:
+        if pattern.match(name):
+            return pattern.sub(full, name)
+    return name
 
 
 class ScriptBuilder:
@@ -67,6 +85,8 @@ class ScriptBuilder:
 
         PTBuilder API: addLink(dev1, port1, dev2, port2, cableType)
         """
+        port1 = _expand_port(port1)
+        port2 = _expand_port(port2)
         return (
             f"addLink({_js(device1)}, {_js(port1)}, "
             f"{_js(device2)}, {_js(port2)}, {_js(cable_type)});"
@@ -78,6 +98,7 @@ class ScriptBuilder:
 
         PTBuilder API: removeLink(device, port)
         """
+        port = _expand_port(port)
         return f"removeLink({_js(device)}, {_js(port)});"
 
     # ------------------------------------------------------------------ #
@@ -144,13 +165,15 @@ class ScriptBuilder:
             )
 
         for conn in connections:
+            cable_key = conn.get("cable", "straight")
+            cable = self.resolve_cable_type(cable_key)
             statements.append(
                 self.add_link(
                     conn["from_device"],
                     conn["from_port"],
                     conn["to_device"],
                     conn["to_port"],
-                    conn.get("cable", "Copper Straight-Through"),
+                    cable,
                 )
             )
 

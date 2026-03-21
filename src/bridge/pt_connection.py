@@ -3,12 +3,10 @@ HTTP bridge between Python and Packet Tracer via PTBuilder.
 
 Architecture:
   1. This module runs a local HTTP server on port 54321.
-  2. The user pastes the bootstrap script (get_bootstrap_script()) in
-     PTBuilder's Builder Code Editor and clicks Run — once per PT session.
-  3. PTBuilder's webview polls GET /next every 500 ms via XMLHttpRequest.
-  4. When a JS command is queued, /next returns it and PTBuilder executes
+  2. PTBuilder (with MCP bridge) auto-polls GET /next every 500 ms on startup.
+  3. When a JS command is queued, /next returns it and PTBuilder executes
      it via $se('runCode', cmd) in PT's Script Engine.
-  5. Results come back via POST /result.
+  4. Results come back via POST /result.
 
 Based on the approach from https://github.com/deiviidsito/mcp_packet_tracer
 """
@@ -43,7 +41,19 @@ class PTCommandBridge:
         self._thread = None
         self._last_poll: float = 0.0
 
+    def _kill_stale_server(self) -> None:
+        """Shut down any leftover bridge server from a previous MCP process."""
+        import urllib.request
+        try:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{self.port}/shutdown", timeout=2
+            )
+        except Exception:
+            pass
+        time.sleep(0.3)
+
     def start(self) -> None:
+        self._kill_stale_server()
         bridge = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -58,6 +68,9 @@ class PTCommandBridge:
                     self._respond(200, cmd)
                 elif self.path == "/ping":
                     self._respond(200, "pong")
+                elif self.path == "/shutdown":
+                    self._respond(200, "bye")
+                    threading.Thread(target=bridge._server.shutdown, daemon=True).start()
                 elif self.path == "/status":
                     ago = time.time() - bridge._last_poll
                     ok = bridge._last_poll > 0 and ago < 5.0
@@ -104,6 +117,7 @@ class PTCommandBridge:
             def log_message(self, *args):
                 pass  # silence HTTP logs
 
+        ThreadingHTTPServer.allow_reuse_address = False
         self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
@@ -120,22 +134,6 @@ class PTCommandBridge:
     def enqueue(self, js: str) -> None:
         self._queue.put(js)
 
-    def get_bootstrap_script(self) -> str:
-        """JS to paste in PTBuilder's Builder Code Editor (once per session)."""
-        inner = (
-            "setInterval(function(){"
-            "var x=new XMLHttpRequest();"
-            f"x.open('GET','http://127.0.0.1:{self.port}/next',true);"
-            "x.onload=function(){"
-            "if(x.status===200&&x.responseText){"
-            "$se('runCode',x.responseText)"
-            "}};"
-            "x.onerror=function(){};"
-            "x.send()"
-            "},500)"
-        )
-        return f'window.webview.evaluateJavaScriptAsync("{inner}");'
-
 
 class PTConnection:
     """
@@ -151,9 +149,6 @@ class PTConnection:
     def connected(self) -> bool:
         return self._connected
 
-    def get_bootstrap_script(self) -> str:
-        return self._bridge.get_bootstrap_script()
-
     async def connect(self) -> bool:
         """Start the bridge server and check if PT is already polling."""
         if self._bridge._server is None:
@@ -162,7 +157,7 @@ class PTConnection:
         if not self._connected:
             logger.warning(
                 "PTBuilder is not polling yet. "
-                "Paste the bootstrap script in Builder Code Editor and click Run."
+                "Make sure Packet Tracer is open with the MCP bridge PTBuilder module installed."
             )
         return self._connected
 
@@ -180,10 +175,12 @@ class PTConnection:
         unless the script explicitly calls reportResult()).
         """
         if not self._connected:
+            # Auto-reconnect: PT may have started polling after MCP server started
+            await self.reconnect()
+        if not self._connected:
             raise PTConnectionError(
                 "PTBuilder is not connected. "
-                "Paste the bootstrap script in Builder Code Editor and click Run:\n\n"
-                + self._bridge.get_bootstrap_script()
+                "Make sure Packet Tracer is open with the MCP bridge PTBuilder module installed."
             )
         self._bridge.enqueue(js_code)
         # Give PT time to pick it up

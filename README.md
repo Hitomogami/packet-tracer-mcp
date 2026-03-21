@@ -1,6 +1,6 @@
 # Packet Tracer MCP Server
 
-> ⚠️ **Beta** — Active development. Some features may be incomplete or change in future versions.
+> **Beta** — Active development. Some features may be incomplete or change in future versions.
 
 Control Cisco Packet Tracer in real time using natural language through Claude.
 
@@ -10,17 +10,17 @@ Write prompts like *"create a WAN network with OSPF between two sites"* and watc
 
 ```
 You (Claude Desktop / Claude Code)
-        │
-        ▼  natural language prompt
-  MCP Server (Python)  ← stdio transport
-        │
-        ▼  generates JavaScript (PTBuilder API)
+        |
+        v  natural language prompt
+  MCP Server (Python)  <- stdio transport
+        |
+        v  generates JavaScript (PTBuilder API)
   Local HTTP server :54321
-        │
-        ▼  PTBuilder webview polls /next every 500ms
-  PTBuilder (extension running inside PT)
-        │
-        ▼  executes live
+        |
+        v  PTBuilder-MCP auto-polls /next every 500ms
+  PTBuilder-MCP (extension running inside PT)
+        |
+        v  executes live
   Cisco Packet Tracer
 ```
 
@@ -28,8 +28,8 @@ You (Claude Desktop / Claude Code)
 
 - Python 3.11+
 - Cisco Packet Tracer 8.x
-- PTBuilder loaded in PT ([github.com/kimmknight/PTBuilder](https://github.com/kimmknight/PTBuilder))
-- Claude Desktop or Claude Code
+- **Builder-MCP.pts** installed in PT (see [Packet Tracer setup](#packet-tracer-setup))
+- Claude Desktop, Claude Code, or any MCP-compatible client
 
 ## Installation
 
@@ -38,6 +38,22 @@ git clone https://github.com/YOUR_USER/packet-tracer-mcp
 cd packet-tracer-mcp
 pip install -e .
 ```
+
+## Packet Tracer setup
+
+This server requires **Builder-MCP.pts**, a modified version of [PTBuilder](https://github.com/kimmknight/PTBuilder) that automatically connects to the MCP server when Packet Tracer starts. No manual scripts or copy-pasting needed.
+
+**1.** Download **Builder-MCP.pts** from the [latest release](https://github.com/caixax/PTBuilder/releases/tag/release)
+
+**2.** Open Packet Tracer and go to **Extensions > Scripting > Configure PT Script Modules**
+
+**3.** Click **Add** and select the downloaded `Builder-MCP.pts` file
+
+**4.** Make sure it is set to **On Startup** and click **OK**
+
+**5.** Restart Packet Tracer. The bridge starts automatically — no further action needed.
+
+> Builder-MCP.pts is a fork of [kimmknight/PTBuilder](https://github.com/kimmknight/PTBuilder) with an added MCP bridge module that auto-polls the MCP server on startup. The original Builder Code Editor functionality is preserved. Source code: [github.com/caixax/PTBuilder](https://github.com/caixax/PTBuilder)
 
 ## Configuration
 
@@ -124,7 +140,7 @@ claude mcp add packet-tracer -- python -m src.server
 
 ```bash
 # No CLI — use the UI
-# Cline sidebar → Settings (⚙) → MCP Servers → Edit MCP Settings
+# Cline sidebar > Settings > MCP Servers > Edit MCP Settings
 ```
 
 ```json
@@ -184,25 +200,9 @@ This server follows the [MCP specification](https://modelcontextprotocol.io) —
 
 Check your client's documentation for how to add a `stdio` MCP server with a custom command. If you get it working with a client not listed here, feel free to **[open a PR or issue](../../issues)** to add it to this list.
 
-## Packet Tracer setup (once per session)
-
-Every time you open PT and Claude Code, activate the bridge:
-
-**1.** In PT open **Extensions → Builder Code Editor**
-
-**2.** Paste this script in the editor and click **Run**:
-
-```javascript
-window.webview.evaluateJavaScriptAsync("setInterval(function(){var x=new XMLHttpRequest();x.open('GET','http://127.0.0.1:54321/next',true);x.onload=function(){if(x.status===200&&x.responseText){$se('runCode',x.responseText)}};x.onerror=function(){};x.send()},500)");
-```
-
-**3.** Done. PTBuilder starts polling the MCP server and executes commands in real time.
-
-> You only need to paste the bootstrap once per session. If you restart Claude Code, repeat this step.
-
 ## Usage
 
-With PT open and the bridge active, write in Claude:
+With Packet Tracer open and the MCP server running, write in Claude:
 
 ```
 Create a network with router R1, switch SW1 and two PCs.
@@ -225,6 +225,7 @@ its own LAN, and configure OSPF area 0 between them.
 | Tool | Description |
 |------|-------------|
 | `pt_add_device` | Add a device to the canvas |
+| `pt_remove_device` | Remove a device from the canvas |
 | `pt_list_devices` | List devices in the topology |
 | `pt_get_device_info` | Get detailed info about a device |
 
@@ -260,10 +261,14 @@ its own LAN, and configure OSPF area 0 between them.
 | `pc` | PC-PT |
 | `server` | Server-PT |
 | `laptop` | Laptop-PT |
+| `tablet` | TabletPC-PT |
+| `smartphone` | SMARTPHONE-PT |
 | `phone` | Cisco 7960 |
 | `ap` | AccessPoint-PT |
-| `firewall` | ASA5506 |
+| `wifi` | Linksys-WRT300N |
+| `firewall` | ASA 5506-X |
 | `cloud` | Cloud-PT |
+| `wlc` | WLC-3504 |
 
 ## Project structure
 
@@ -285,7 +290,6 @@ packet-tracer-mcp/
 │       ├── devices.json        # Device catalog
 │       ├── cables.json         # Cable types
 │       └── templates.json      # Topology templates
-├── pt_mcp_bridge.js            # Bootstrap script for PTBuilder
 ├── pyproject.toml
 └── LICENSE
 ```
@@ -293,13 +297,18 @@ packet-tracer-mcp/
 ## Troubleshooting
 
 **"PTBuilder is not polling"**
-- Make sure you pasted the bootstrap script in the Builder Code Editor and clicked Run
-- If you restarted Claude Code, paste the bootstrap again
-- Verify PTBuilder is loaded: Extensions → Configure PT Extension Modules
+- Make sure Packet Tracer is open with Builder-MCP.pts installed
+- Verify the module is enabled: Extensions > Scripting > Configure PT Script Modules
+- Check that it is set to "On Startup"
+- Restart Packet Tracer after installing the module
+
+**"Port 54321 already in use"**
+- A previous MCP server process may still be running
+- The server automatically cleans up stale processes on startup, but if it fails, restart Packet Tracer and Claude Code
 
 **Error "Invalid arguments for IPC call"**
 - Check the device type is valid (use the aliases from the table above)
-- Make sure port names match the model (e.g. Gi0/0 on 2911, Fa0/1 on 2960)
+- Port names are auto-expanded (Gi0/0 -> GigabitEthernet0/0) but verify they exist on the device model
 
 **Error "getPort of null"**
 - The device was not added successfully before trying to configure it

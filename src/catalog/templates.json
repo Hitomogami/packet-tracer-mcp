@@ -29,7 +29,7 @@
       },
       "devices": [
         {"name": "{router_name}", "type": "2911", "x": 300, "y": 100},
-        {"name": "{switch_name}", "type": "2960", "x": 300, "y": 250}
+        {"name": "{switch_name}", "type": "2960-24TT", "x": 300, "y": 250}
       ],
       "connections": [
         {
@@ -72,12 +72,12 @@
       "devices": [
         {"name": "R1", "type": "2911", "x": 150, "y": 200},
         {"name": "R2", "type": "2911", "x": 500, "y": 200},
-        {"name": "S1", "type": "2960", "x": 150, "y": 350},
-        {"name": "S2", "type": "2960", "x": 500, "y": 350},
-        {"name": "PC1", "type": "PC", "x": 50, "y": 500},
-        {"name": "PC2", "type": "PC", "x": 200, "y": 500},
-        {"name": "PC3", "type": "PC", "x": 400, "y": 500},
-        {"name": "PC4", "type": "PC", "x": 600, "y": 500}
+        {"name": "S1", "type": "2960-24TT", "x": 150, "y": 350},
+        {"name": "S2", "type": "2960-24TT", "x": 500, "y": 350},
+        {"name": "PC1", "type": "PC-PT", "x": 50, "y": 500},
+        {"name": "PC2", "type": "PC-PT", "x": 200, "y": 500},
+        {"name": "PC3", "type": "PC-PT", "x": 400, "y": 500},
+        {"name": "PC4", "type": "PC-PT", "x": 600, "y": 500}
       ],
       "connections": [
         {
@@ -194,12 +194,12 @@
       "devices": [
         {"name": "R-WAN", "type": "2911", "x": 500, "y": 100},
         {"name": "FW", "type": "2911", "x": 300, "y": 200},
-        {"name": "S-DMZ", "type": "2960", "x": 150, "y": 300},
-        {"name": "S-LAN", "type": "2960", "x": 350, "y": 350},
-        {"name": "WebServer", "type": "Server", "x": 100, "y": 450},
-        {"name": "DNS", "type": "Server", "x": 200, "y": 450},
-        {"name": "PC1", "type": "PC", "x": 300, "y": 500},
-        {"name": "PC2", "type": "PC", "x": 420, "y": 500}
+        {"name": "S-DMZ", "type": "2960-24TT", "x": 150, "y": 300},
+        {"name": "S-LAN", "type": "2960-24TT", "x": 350, "y": 350},
+        {"name": "WebServer", "type": "Server-PT", "x": 100, "y": 450},
+        {"name": "DNS", "type": "Server-PT", "x": 200, "y": 450},
+        {"name": "PC1", "type": "PC-PT", "x": 300, "y": 500},
+        {"name": "PC2", "type": "PC-PT", "x": 420, "y": 500}
       ],
       "connections": [
         {
