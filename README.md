@@ -34,7 +34,7 @@ You (Claude Desktop / Claude Code)
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USER/packet-tracer-mcp
+git clone https://github.com/caixax/packet-tracer-mcp
 cd packet-tracer-mcp
 pip install -e .
 ```
