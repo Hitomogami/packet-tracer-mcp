@@ -2,7 +2,7 @@
 
 > **Beta** — Active development. Some features may be incomplete or change in future versions.
 
-Control Cisco Packet Tracer in real time using natural language through Claude.
+Control Cisco Packet Tracer in real time using natural language through any MCP-compatible AI agent — Claude Code, OpenCode, Cursor, Continue, Cline, and more.
 
 Write prompts like *"create a WAN network with OSPF between two sites"* and watch the topology build itself live inside Packet Tracer.
 
@@ -29,7 +29,7 @@ You (Claude Desktop / Claude Code)
 - Python 3.11+
 - Cisco Packet Tracer 8.x
 - **Builder-MCP.pts** installed in PT (see [Packet Tracer setup](#packet-tracer-setup))
-- Claude Desktop, Claude Code, or any MCP-compatible client
+- Any MCP-compatible AI agent (Claude Code, OpenCode, Cursor, Cline, Continue, etc.)
 
 ## Installation
 
