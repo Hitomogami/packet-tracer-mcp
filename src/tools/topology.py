@@ -2,6 +2,7 @@
 MCP tools for topology-level operations: templates, clear, validate, diagnostics.
 """
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -180,7 +181,8 @@ async def pt_export_topology(
     topology = await queue.get_topology()
 
     if topology.get("state") == "disconnected":
-        return "Cannot export: Packet Tracer is not connected."
+        detail = topology.get("error", "")
+        return "Cannot export: Packet Tracer is not connected." + (f" ({detail})" if detail else "")
 
     devices = topology.get("devices", [])
     links = topology.get("links", [])
@@ -269,18 +271,28 @@ async def pt_ping(
     ctx: Context[ServerSession, AppContext] = None,
 ) -> str:
     """
-    Execute a ping from a device to a destination IP address.
+    Execute a ping from a device to a destination IP address and return the
+    result text.
 
-    Sends 'ping <destination>' via the device's CLI.
-    The device must be configured with an IP address on the relevant interface.
+    PT runs pings asynchronously, so the tool starts the ping, waits for it
+    to settle, then collects the output. PC sources return the full ping
+    transcript (Command-Prompt buffer); IOS sources fall back to the
+    post-ping ARP table, because this PT build does not expose the ping
+    console text for switches/routers through any script API.
     """
     queue = ctx.request_context.lifespan_context.queue
-    commands = ["enable", f"ping {destination}"]
-    result = await queue.configure_device(source, commands)
+    result = await queue.ping(source, destination)
 
     if result.success:
-        output = result.output or "(waiting for ping response...)"
-        return f"Ping from {source} to {destination}:\n{output}"
+        data = result.data if isinstance(result.data, dict) else {}
+        output = str(data.get("output") or result.output or "").strip()
+        if output:
+            return f"Ping from {source} to {destination}:\n{output}"
+        return (
+            f"Ping from {source} to {destination}:\n"
+            "(command executed in PT, but no console text was returned — "
+            "check the result on the device CLI inside Packet Tracer)"
+        )
     return f"✗ Ping failed: {result.error}"
 
 
@@ -291,17 +303,24 @@ async def pt_traceroute(
     ctx: Context[ServerSession, AppContext] = None,
 ) -> str:
     """
-    Execute a traceroute from a device to a destination IP address.
+    Execute a traceroute from a device to a destination IP address and return
+    the console output.
 
-    Sends 'traceroute <destination>' via the device's CLI.
+    Uses the same two-phase collection as pt_ping: the trace runs
+    asynchronously and its text only appears in a console buffer afterwards.
     """
     queue = ctx.request_context.lifespan_context.queue
-    commands = ["enable", f"traceroute {destination}"]
-    result = await queue.configure_device(source, commands)
+    result = await queue.async_cli(source, f"traceroute {destination}")
 
     if result.success:
-        output = result.output or "(waiting for traceroute...)"
-        return f"Traceroute from {source} to {destination}:\n{output}"
+        output = result.output.strip()
+        if output:
+            return f"Traceroute from {source} to {destination}:\n{output}"
+        return (
+            f"Traceroute from {source} to {destination}:\n"
+            "(command executed in PT, but this PT build does not return console "
+            "text — check the result on the device CLI inside Packet Tracer)"
+        )
     return f"✗ Traceroute failed: {result.error}"
 
 
@@ -313,14 +332,20 @@ async def pt_show_interfaces(
     """
     Show interface status and IP configuration for a device.
 
-    Executes 'show ip interface brief' to display a summary of all interfaces.
+    Executes 'show ip interface brief' and returns the console output.
     """
     queue = ctx.request_context.lifespan_context.queue
-    result = await queue.configure_device(device_name, ["enable", "show ip interface brief"])
+    result = await queue.exec_cli(device_name, ["show ip interface brief"], timeout=20.0)
 
     if result.success:
-        output = result.output or "(no output — ensure device is configured)"
-        return f"Interfaces on {device_name}:\n{output}"
+        output = result.output.strip()
+        if output:
+            return f"Interfaces on {device_name}:\n{output}"
+        return (
+            f"Interfaces on {device_name}:\n"
+            "(command executed in PT, but this PT build does not return console "
+            "text — check the CLI inside Packet Tracer)"
+        )
     return f"✗ Failed to get interfaces for {device_name}: {result.error}"
 
 

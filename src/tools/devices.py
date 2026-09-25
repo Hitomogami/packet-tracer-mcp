@@ -168,6 +168,8 @@ async def pt_get_device_info(
         for port in ports:
             connected = port.get("connected", False)
             status = "connected" if connected else "free"
-            lines.append(f"    - {port.get('name', port)}: {status}")
+            ip = port.get("ip", "")
+            ip_str = f", ip={ip}" if ip else ""
+            lines.append(f"    - {port.get('name', port)}: {status}{ip_str}")
 
     return "\n".join(lines)

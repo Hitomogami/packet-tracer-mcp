@@ -10,8 +10,36 @@ from mcp.server.session import ServerSession
 from pydantic import Field
 
 from ..app import AppContext, mcp
+from ..bridge.script_builder import ScriptBuilder
 
 logger = logging.getLogger(__name__)
+
+
+def _format_config_rows(rows: list) -> tuple[list[str], list[str]]:
+    """
+    Render per-command results as display lines.
+
+    Returns (lines, failed_lines): every executed command gets one line;
+    rejected commands get an extra ✗ line carrying the IOS error text.
+    """
+    lines: list[str] = []
+    failed: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        cmd = str(row.get("cmd") or "?")
+        out = str(row.get("out") or "").strip()
+        if row.get("failed"):
+            err = str(row.get("error") or out or "rejected by IOS")
+            failed.append(f"  ✗ {cmd}  →  {err}")
+            if out and out.splitlines()[0] != err:
+                failed.append(f"      {out.splitlines()[0]}")
+        else:
+            line = f"  ✓ {cmd}"
+            if out:
+                line += f"  →  {out.splitlines()[0][:150]}"
+            lines.append(line)
+    return lines, failed
 
 
 @mcp.tool()
@@ -32,28 +60,49 @@ async def pt_send_commands(
     """
     Send a sequence of CLI commands to a device in Packet Tracer.
 
-    Commands are sent in order. Include navigation commands (enable,
-    configure terminal, exit) as needed. The device must be placed in
-    the topology before configuring it.
+    Commands are sent in order and each one's result is confirmed by PT —
+    the response lists every command with ✓/✗ plus any IOS error text.
+    Mode-navigation commands (enable, conf t, end, exit) are handled by the
+    bridge itself: the device is placed in global-config mode first, so you
+    can pass configuration commands directly. Configs are NOT saved to
+    NVRAM automatically — call pt_save_config afterwards.
 
     Common command sequences:
-    - Interface IP: ['en', 'conf t', 'int Gi0/0', 'ip address X.X.X.X M.M.M.M', 'no shut']
-    - Hostname: ['en', 'conf t', 'hostname R1']
-    - OSPF: ['en', 'conf t', 'router ospf 1', 'network X.X.X.X 0.0.0.X area 0']
-    - VLAN: ['en', 'conf t', 'vlan 10', 'name Sales', 'exit']
+    - Interface IP: ['interface Gi0/0', 'ip address X.X.X.X M.M.M.M', 'no shutdown']
+    - Hostname: ['hostname R1']
+    - OSPF: ['router ospf 1', 'network X.X.X.X 0.0.0.X area 0']
+    - VLAN: ['vlan 10', 'name Sales']
     """
     queue = ctx.request_context.lifespan_context.queue
     result = await queue.configure_device(device_name, commands)
 
-    if result.success:
-        output_lines = [f"✓ Commands sent to {device_name}:"]
+    if not result.success:
+        return f"✗ Failed to configure {device_name}: {result.error}"
+
+    rows = result.data.get("results") if isinstance(result.data, dict) else None
+    if not isinstance(rows, list):
+        # Older bridge without per-command results — keep the legacy wording.
+        output_lines = [f"✓ Commands executed on {device_name} (confirmed by PT):"]
         for cmd in commands:
             output_lines.append(f"  {cmd}")
         if result.output:
             output_lines.append(f"\nOutput:\n{result.output}")
         return "\n".join(output_lines)
 
-    return f"✗ Failed to configure {device_name}: {result.error}"
+    ok_lines, failed_lines = _format_config_rows(rows)
+    skipped = [
+        c.strip() for c in commands
+        if c.strip().lower() in ScriptBuilder.CONFIG_SKIP_COMMANDS
+    ]
+    header = (
+        f"⚠ {device_name}: {len(failed_lines)} of {len(rows)} commands rejected by IOS"
+        if failed_lines
+        else f"✓ Sent {len(rows)} command(s) to {device_name} — every command confirmed by PT:"
+    )
+    lines = [header, *ok_lines, *failed_lines]
+    if skipped:
+        lines.append(f"(skipped mode-navigation commands: {', '.join(skipped)})")
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -67,11 +116,17 @@ async def pt_get_running_config(
     Executes 'show running-config' on the device and returns the output.
     """
     queue = ctx.request_context.lifespan_context.queue
-    result = await queue.configure_device(device_name, ["show running-config"])
+    result = await queue.exec_cli(device_name, ["show running-config"], timeout=30.0)
 
     if result.success:
-        output = result.output or "(no output returned — PT may need more time)"
-        return f"Running config for {device_name}:\n\n{output}"
+        output = result.output.strip()
+        if output:
+            return f"Running config for {device_name}:\n\n{output}"
+        return (
+            f"Running config for {device_name}:\n\n"
+            "(command executed in PT, but this PT build does not return console "
+            "text — check the CLI inside Packet Tracer)"
+        )
     return f"✗ Failed to get config for {device_name}: {result.error}"
 
 
@@ -89,7 +144,16 @@ async def pt_save_config(
     result = await queue.save_config(device_name)
 
     if result.success:
-        return f"✓ Configuration saved on {device_name}"
+        rows = result.data.get("results") if isinstance(result.data, dict) else None
+        if isinstance(rows, list) and rows and rows[0].get("failed"):
+            out = str(rows[0].get("out") or "").strip()
+            return f"✗ Save may have failed on {device_name}: {out or rows[0].get('error', 'no output')}"
+        detail = ""
+        if isinstance(rows, list) and rows:
+            out = str(rows[0].get("out") or "").strip()
+            if out:
+                detail = f" ({out.splitlines()[0]})"
+        return f"✓ Configuration saved on {device_name}{detail}"
     return f"✗ Failed to save config on {device_name}: {result.error}"
 
 
@@ -144,10 +208,19 @@ async def pt_configure_ip(
     queue = ctx.request_context.lifespan_context.queue
     result = await queue.configure_device(device_name, commands)
 
-    if result.success:
-        return (
-            f"✓ Configured {device_name} {interface}: "
-            f"{ip_address}/{subnet_mask}"
-            + (" (up)" if no_shutdown else "")
-        )
-    return f"✗ Failed to configure {device_name} {interface}: {result.error}"
+    if not result.success:
+        return f"✗ Failed to configure {device_name} {interface}: {result.error}"
+
+    rows = result.data.get("results") if isinstance(result.data, dict) else None
+    if isinstance(rows, list):
+        _, failed_lines = _format_config_rows(rows)
+        if failed_lines:
+            return (
+                f"✗ {device_name} {interface}: IOS rejected part of the configuration\n"
+                + "\n".join(failed_lines)
+            )
+    return (
+        f"✓ Configured {device_name} {interface}: "
+        f"{ip_address}/{subnet_mask}"
+        + (" (up)" if no_shutdown else "")
+    )

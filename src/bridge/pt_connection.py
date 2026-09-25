@@ -6,13 +6,18 @@ Architecture:
   2. PTBuilder (with MCP bridge) auto-polls GET /next every 500 ms on startup.
   3. When a JS command is queued, /next returns it and PTBuilder executes
      it via $se('runCode', cmd) in PT's Script Engine.
-  4. Results come back via POST /result.
+  4. The command (wrapped by script_builder.wrap_with_result) calls
+     reportResult(), which injects an XHR into the hidden MCP Bridge webview
+     (the script engine itself has no HTTP access) and POSTs the result to
+     /result. send_script() blocks on the result queue, turning the channel
+     into a synchronous request-response.
 
 Based on the approach from https://github.com/deiviidsito/mcp_packet_tracer
 """
 
 import asyncio
 import http.server
+import itertools
 import json
 import logging
 import threading
@@ -20,14 +25,23 @@ import time
 from http.server import ThreadingHTTPServer
 from queue import Empty, Queue
 from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+from .script_builder import BRIDGE_PORT, COMPAT_SHIM, wrap_with_result
 
 logger = logging.getLogger(__name__)
 
-BRIDGE_PORT = 54321
+# Default round-trip budget: PT polls every 500 ms, then executes the command
+# in its emulated IOS (a "show run" on a 3560 can take a few seconds).
+RESULT_TIMEOUT = 15.0
 
 
 class PTConnectionError(Exception):
     """Raised when communication with Packet Tracer fails."""
+
+
+class PTScriptError(PTConnectionError):
+    """The command reached PT but the JS raised on the PT side."""
 
 
 class PTCommandBridge:
@@ -58,7 +72,10 @@ class PTCommandBridge:
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/next":
+                # Query-string aware: /result?hold=0 must not lose the param.
+                route = urlparse(self.path).path
+                query = parse_qs(urlparse(self.path).query)
+                if route == "/next":
                     bridge._last_poll = time.time()
                     bridge._connected_flag = True
                     try:
@@ -66,21 +83,35 @@ class PTCommandBridge:
                     except Empty:
                         cmd = ""
                     self._respond(200, cmd)
-                elif self.path == "/ping":
+                elif route == "/ping":
                     self._respond(200, "pong")
-                elif self.path == "/shutdown":
+                elif route == "/shutdown":
                     self._respond(200, "bye")
                     threading.Thread(target=bridge._server.shutdown, daemon=True).start()
-                elif self.path == "/status":
+                elif route == "/status":
                     ago = time.time() - bridge._last_poll
                     ok = bridge._last_poll > 0 and ago < 5.0
                     self._respond(200, json.dumps({"connected": ok, "last_poll_ago": round(ago, 1)}))
-                elif self.path == "/result":
-                    try:
-                        result = bridge._results.get(timeout=9.0)
-                        self._respond(200, result)
-                    except Empty:
-                        self._respond(204, "")
+                elif route == "/result":
+                    # hold=1 (default): long-poll up to 9s for external probes.
+                    # hold=0: non-blocking get_nowait — safe queue draining.
+                    #
+                    # ⚠ NEVER drain via a holding GET with a short client
+                    # timeout: the handler keeps blocking in Queue.get after
+                    # the client disconnects and steals the NEXT reported
+                    # result into the dead socket (silent result loss —
+                    # this cost a full debugging session, see MCP报告 §六).
+                    if query.get("hold", ["1"])[0] == "0":
+                        try:
+                            self._respond(200, bridge._results.get_nowait())
+                        except Empty:
+                            self._respond(204, "")
+                    else:
+                        try:
+                            result = bridge._results.get(timeout=9.0)
+                            self._respond(200, result)
+                        except Empty:
+                            self._respond(204, "")
                 else:
                     self._respond(404, "")
 
@@ -134,6 +165,21 @@ class PTCommandBridge:
     def enqueue(self, js: str) -> None:
         self._queue.put(js)
 
+    def drain_results(self) -> None:
+        """Drop any stale results left over from previous commands."""
+        while True:
+            try:
+                self._results.get_nowait()
+            except Empty:
+                return
+
+    def wait_result(self, timeout: float) -> str | None:
+        """Block for the next reported result, or None on timeout."""
+        try:
+            return self._results.get(timeout=timeout)
+        except Empty:
+            return None
+
 
 class PTConnection:
     """
@@ -144,6 +190,7 @@ class PTConnection:
         self._bridge = PTCommandBridge(port)
         self._bridge._connected_flag = False
         self._connected = False
+        self._seq = itertools.count(1)
 
     @property
     def connected(self) -> bool:
@@ -168,11 +215,16 @@ class PTConnection:
         self._connected = self._bridge.is_connected
         return self._connected
 
-    async def send_script(self, js_code: str) -> dict[str, Any]:
+    async def send_script(
+        self, js_code: str, timeout: float = RESULT_TIMEOUT
+    ) -> dict[str, Any]:
         """
-        Queue a JS snippet for execution in PT.
-        Fire-and-forget: no result returned (PTBuilder doesn't send responses
-        unless the script explicitly calls reportResult()).
+        Execute a JS snippet in PT and wait for its reported result.
+
+        Returns {"status": "ok", "output": str, "data": Any}. Raises
+        PTScriptError when the JS raised on the PT side and
+        PTConnectionError when no result came back (bridge down or a
+        Builder-MCP.pts build without result-reporting support).
         """
         if not self._connected:
             # Auto-reconnect: PT may have started polling after MCP server started
@@ -182,22 +234,60 @@ class PTConnection:
                 "PTBuilder is not connected. "
                 "Make sure Packet Tracer is open with the MCP bridge PTBuilder module installed."
             )
-        self._bridge.enqueue(js_code)
-        # Give PT time to pick it up
-        await asyncio.sleep(0.6)
-        # Confirm bridge is still alive
-        if not self._bridge.is_connected:
-            self._connected = False
-            raise PTConnectionError("PT stopped polling — is Packet Tracer still open?")
-        return {"status": "ok", "output": ""}
+
+        seq = next(self._seq)
+        self._bridge.drain_results()
+        self._bridge.enqueue(COMPAT_SHIM + "\n" + wrap_with_result(js_code, seq))
+
+        # Blocking Queue.get must not freeze the event loop.
+        raw = await asyncio.to_thread(self._bridge.wait_result, timeout)
+
+        if raw is None:
+            if not self._bridge.is_connected:
+                self._connected = False
+                raise PTConnectionError(
+                    "PT stopped polling — is Packet Tracer still open?"
+                )
+            raise PTConnectionError(
+                f"PT accepted command #{seq} but never reported a result within "
+                f"{timeout:.0f}s. If this happens on every call, the installed "
+                "Builder-MCP.pts bridge is too old to report results — reinstall "
+                "the latest module via Extensions > Scripting > Configure PT "
+                "Script Modules."
+            )
+
+        return self._parse_result(raw, seq)
+
+    @staticmethod
+    def _parse_result(raw: str, seq: int) -> dict[str, Any]:
+        raw = (raw or "").strip()
+        if not raw:
+            raise PTConnectionError("PT reported an empty result payload.")
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            # Non-JSON body: treat it as raw text output.
+            return {"status": "ok", "output": raw, "data": None}
+
+        if not isinstance(payload, dict) or "result" not in payload:
+            return {"status": "ok", "output": raw, "data": payload}
+
+        if payload.get("seq") not in (None, seq):
+            logger.warning(
+                "Received result seq=%s while waiting for seq=%s", payload.get("seq"), seq
+            )
+
+        result = payload.get("result") or {}
+        if result.get("ok") is False:
+            raise PTScriptError(f"PT-side script error: {result.get('error', 'unknown')}")
+        return {
+            "status": "ok",
+            "output": str(result.get("output", "") or ""),
+            "data": result.get("data"),
+        }
 
     async def send_command(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.send_script(payload.get("script", ""))
-
-    async def get_topology_state(self) -> dict[str, Any]:
-        if not self._connected:
-            return {"state": "disconnected", "devices": [], "links": []}
-        return {"state": "connected", "devices": [], "links": []}
 
     def __repr__(self) -> str:
         status = "connected" if self.connected else "disconnected"
