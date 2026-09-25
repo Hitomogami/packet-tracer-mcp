@@ -388,7 +388,8 @@ class ScriptBuilder:
         a ping) its synchronous output is returned as indirect evidence.
         """
         return (
-            'var __dv=null;try{__dv=ipc.network().getDevice(' + _js(name) + ');}catch(e){}\n'
+            _CTEXT_JS
+            + 'var __dv=null;try{__dv=ipc.network().getDevice(' + _js(name) + ');}catch(e){}\n'
             'if(!__dv){throw new Error(' + _js(f"Device '{name}' not found in Packet Tracer") + ');}\n'
             'var __cp=null;try{if(typeof __dv.getCommandPrompt==="function"){__cp=__dv.getCommandPrompt();}}catch(e){}\n'
             'if(__cp){'
