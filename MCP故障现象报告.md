@@ -3,6 +3,7 @@
 > 实验环境：实验5《利用三层交换机实现VLAN间的通信》（switchC=3560 三层交换机，switchA/switchB=2960，pc1~pc4）
 > 报告日期：2026-09-24
 > 现象总结：**写命令（添加/连线/发CLI/配PC）能到达 PT 并生效；读取类接口（设备列表/拓扑/CLI输出回传）始终返回空或假数据。**
+> 🗄️ **归档说明（2026-09-25，§九之后生效）**：本文件已降级为**历史排障档案**。长期有效的运维知识已蒸馏固化进 MCP 服务器本体——会话级 instructions（`app.py` OPERATIONS_DIGEST）、工具 docstring/返回文案（pt_ping/pt_save_config/pt_get_device_info）、资源 `pt://ops/manual`（安全矩阵+探针纪律）。**新会话无需通读本文件**：日常使用看服务器 instructions；排障/探针前读 `pt://ops/manual`；仅研究历史故障细节时按节索引查阅。
 
 ---
 
@@ -406,5 +407,71 @@ TTL 128→127 = 恰经一次三层转发，`show ip route` 两条 C 直连路由
 | setTimeout 裸回调（仅 reportResult） | ✅ | ✅ |
 | setTimeout 回调内任何 IPC | 🚫 挂死 | 🚫 同 |
 | shell `-c` 内联 JS 探测 | 🚫 **禁止**（转义损坏→Parse error） | 🚫 同 |
+
+---
+
+## 九、第五次会话（2026-09-25 续）：修复总验收 + 实验状态回退与重建
+
+### 9.1 修复总验收结论：报告记录的全部故障**已确认修复**
+
+**静态核对**（先于在线测试）：§5.2/§7.3/§8.3 声称的修复点全部在源码中就位——shim `%27` 转义（script_builder.py L96）、`/result?hold=0` 非阻塞取结果、真实 IPC 原语（`LogicalWorkspace.removeDevice` 等）、`get_topology()`、双路径 `exec_cli`、`async_start/async_collect` 两阶段、IOS ARP 兜底；代码已随 `af75017` + `25b89dd` 提交，工作区干净。
+
+**离线回归**：conda 环境（pytest 未装，内联遍历跑）`tests/test_bridge_roundtrip.py` **4/4 PASS**。
+
+**在线验证**（MCP 工具直测运行中的 PT）：
+
+| 验证项 | 对应历史故障 | 结果 |
+|--------|--------------|------|
+| `pt_list_devices` / `pt_list_connections` / `pt_get_device_info` / `pt_validate` | B 类：恒空、`Known devices: none` | ✅ 真实返回 9 设备（清理前）/6 连线/端口级 IP 与连接状态 |
+| `pt_show_interfaces(switchC)` | C 类：`(no output)` | ✅ 完整 IOS 接口表 |
+| `pt_get_running_config(switchC)` | C 类：空/假成功 | ✅ 1251 字节全文回传 |
+| `pt_ping(pc2→…)` | C 类：声明无法回传 | ✅ PC 命令提示符转录全文回传 |
+| `pt_ping(switchC→…)`（IOS ARP 兜底，`25b89dd`） | C 类 + 提交说明中"需重启 MCP 生效" | ✅ **MCP 层完整 ARP 表回传**（双 VLAN 4 PC 在列）——闭环完成 |
+| `pt_remove_device` ×2（testprobe、Power Distribution Device0） | D 类：假成功 + ReferenceError 弹窗 | ✅ 真实删除成功，**PT 无任何弹窗**（用户目视确认通道） |
+| shim 撇号 bug | §8.1 #1 | ✅ 离线断言覆盖；在线故意复现有 webview 冻结风险，不做实弹测试 |
+
+### 9.2 实验状态回退事件（重要教训，非 MCP 故障）
+
+会话开始时发现 PT 打开的 `1.pkt` 是**旧快照**，与 §8.4 完成态不符。判定证据链：
+
+1. switchC running-config：`hostname Switch`（默认名）、无 vlan10/20、无 SVI、Fa0/1-2 无 trunk，仅 `ip routing` 在
+2. `pt_get_device_info(pc1~4)`：FastEthernet0 `ip=0.0.0.0`（PC IP 全丢）
+3. 已清理的 `testprobe`、`Power Distribution Device0` 重现画布（9 台设备）
+4. IOS ping 兜底返回"空输出"而非 `✗ Ping failed` → 证明新版代码已加载（旧代码会抛 `__ctext` ReferenceError），空 ARP 表是因为 switchC 当时无任何 up 的 IP 接口——间接佐证配置回退
+
+**结论**：`write memory` 只保证设备 NVRAM，不等于 `.pkt` 落盘；**实验完成态必须手动 File→Save**。用户已重新手动保存最新 `1.pkt`。
+
+### 9.3 实验重建执行记录（全部经逐条确认通道）
+
+| Phase | 操作 | 结果 |
+|-------|------|------|
+| 1 清理 | `pt_remove_device` ×2 | ✓ 7 设备/6 连线，validate 无告警 |
+| 2 交换机配置 | switchC 16 条、switchA 11 条、switchB 11 条 | ✓ **38/38 逐条确认** |
+| 3 PC IP（无网关） | `pt_configure_pc` ×4 | ✓ 4/4 |
+| 4 核实 | show run / show ip int brief / device_info | ✓ SVI10=192.168.0.1 up/up、SVI20=192.168.1.1 up/up、Fa0/1-2 trunk；PC 端口 IP 全就位 |
+| 5 阶段一 | pc2→pc3、pc1→pc4、pc2→pc1 | ✅ 4/4 TTL=128、✅ 4/4 TTL=128、❌ 4/4 超时（预期） |
+| 5 网关下发 | pc2/pc3→192.168.0.1、pc1/pc4→192.168.1.1 | ✓ 4/4 |
+| 5 阶段二 | pc2→pc1、pc1→pc3、pc2→pc4 | ✅ 3/4、✅ 3/4、✅ 3/4（首包 ARP 超时正常），**TTL=127 = 恰一次三层转发** |
+| 5 IOS 旁证 | `pt_ping(switchC→192.168.0.2)` | ✅ ARP 表学到 4 PC（Vlan10: .2/.3；Vlan20: .2/.3） |
+| 6 留档 | `pt_save_config` ×3；用户手动保存 1.pkt；`topology_export.json` 核对 | ✓ ×3（write memory 确认捕获）；存档与重建后状态一致，无需改写 |
+
+### 9.4 本轮新经验
+
+1. **同源并行 ping 会串输出**：`async_collect` 以 `lastIndexOf(命令)` 锚定后截取缓冲增量，同一 PC 并发两条 ping 时，后采集的那条会把先执行那条的输出一并带回（实测 pc2→pc1 的转录里混入了 pc2→pc3 的 4/4 回显）。**同源 ping 必须串行，异源可并行**。
+2. **判"服务器代码陈旧"还是"环境回退"**：看失败模式——旧代码的 IOS 兜底会以 `✗ Ping failed: ReferenceError` 呈现；"成功 + 空输出"说明新代码在跑、空是环境数据（本例 ARP 表真空）。
+3. **实验快照纪律**：`.pkt` 落盘是实验留档的唯一可靠载体；跨会话续作前先抽查一处"完成态标志"（如 hostname、SVI IP）判断文件新旧，不要假设上次会话的内存态还在。
+
+### 9.5 知识固化：报告 → MCP 服务器本体（2026-09-25，已落地）
+
+问题：本报告 410+ 行，新会话若依赖它需要整读（~8k token），且大部分是已修复 bug 的排障史；不读则"操作纪律层"知识必失传（§9.4 各条均为实际踩坑后补记）。方案：按 MCP 协议四档机制分层固化，报告归档（见文首归档说明）。
+
+| 层 | 载体 | 内容 | 加载时机/成本 |
+|----|------|------|---------------|
+| L1 | `app.py` `FastMCP(instructions=OPERATIONS_DIGEST)` | ~15 行纪律摘要（空读=断连、同源 ping 串行、ARP 复测窗口、NVRAM≠.pkt、跨会话抽查、禁裸投 /queue） | 会话建立常驻（~400 token） |
+| L2 | 工具 docstring：`pt_ping`（串行+复测）、`pt_save_config`（NVRAM/.pkt 双重含义）、`pt_get_device_info`（跨会话健康抽查入口） | 各工具自身关键约束 | 随 tools/list 常驻（本来就在付） |
+| L3 | 返回文案：`pt_ping` 超时尾部附复测提示；`pt_save_config` 成功文案附 File→Save 提醒 | 恰在需要时出现（just-in-time） | 闲置时为零 |
+| L4 | 资源 `pt://ops/manual`（`src/catalog/ops_manual.md`） | §6.2/7.6/8.6/9.4 蒸馏：挂死矩阵、API 事实、挂死识别与恢复、探针纪律、操作纪律 | 按需 read |
+
+测试：`test_server_instructions_digest_is_set`（digest 就位且 FastMCP 已接收）、`test_ops_manual_resource_covers_safety_matrix`（手册含 8 个关键知识锚点）；离线回归 6/6 PASS。**注意：L1-L3 代码需重启 MCP 服务器后生效**（当前运行实例仍为旧 instructions/文案）。
 
 ---

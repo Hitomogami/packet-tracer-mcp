@@ -139,6 +139,11 @@ async def pt_save_config(
     Save the running configuration to startup-config on a device.
 
     Equivalent to 'copy running-config startup-config'.
+
+    NOTE: this writes device NVRAM only. Device configs still vanish if
+    Packet Tracer closes without saving the .pkt — after finishing an
+    experiment, also do File→Save in the PT GUI (configs in NVRAM are
+    included when the .pkt is saved).
     """
     queue = ctx.request_context.lifespan_context.queue
     result = await queue.save_config(device_name)
@@ -153,7 +158,11 @@ async def pt_save_config(
             out = str(rows[0].get("out") or "").strip()
             if out:
                 detail = f" ({out.splitlines()[0]})"
-        return f"✓ Configuration saved on {device_name}{detail}"
+        return (
+            f"✓ Configuration saved on {device_name}{detail}\n"
+            "(NVRAM written. To persist across a PT restart, also save the "
+            ".pkt file in the Packet Tracer GUI: File→Save)"
+        )
     return f"✗ Failed to save config on {device_name}: {result.error}"
 
 

@@ -144,7 +144,15 @@ async def pt_get_device_info(
     name: Annotated[str, Field(description="Device name to query")],
     ctx: Context[ServerSession, AppContext] = None,
 ) -> str:
-    """Get detailed information about a specific device in the topology."""
+    """
+    Get detailed information about a specific device in the topology.
+
+    Reads the live topology from PT (ports, connection and IP state). Also
+    the recommended spot-check for cross-session health: verify a known
+    completion marker (e.g. an SVI IP or a PC's configured address) before
+    trusting that prior-session configuration survived — reopening a .pkt
+    restores an old snapshot.
+    """
     queue = ctx.request_context.lifespan_context.queue
     topology = await queue.get_topology()
 

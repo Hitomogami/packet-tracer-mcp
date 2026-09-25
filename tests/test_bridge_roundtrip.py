@@ -17,6 +17,7 @@ import re
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
 try:
     import pytest
@@ -283,6 +284,41 @@ def test_drain_endpoint_is_non_blocking():
         assert time.time() - t0 < 3, "hold=0 on an empty queue must not block ~9s"
 
     asyncio.run(run())
+
+
+def test_server_instructions_digest_is_set():
+    """The session-level instructions (MCP InitializeResult) must carry the
+    operational digest — it is the always-on replacement for re-reading the
+    full fault report in every new session."""
+    from src.app import OPERATIONS_DIGEST, mcp
+
+    assert mcp.instructions == OPERATIONS_DIGEST
+    for needle in (
+        "serially",          # same-source ping discipline
+        "15-30s",            # ARP settle retest window
+        "File→Save",         # NVRAM ≠ .pkt on disk
+        "pt://ops/manual",   # pointer to the deep manual
+    ):
+        assert needle in OPERATIONS_DIGEST, f"digest missing: {needle}"
+
+
+def test_ops_manual_resource_covers_safety_matrix():
+    """pt://ops/manual must contain the hard-won engine-safety facts so a
+    probing agent cannot repeat the engine-hang history."""
+    manual = (
+        Path(__file__).resolve().parent.parent / "src" / "catalog" / "ops_manual.md"
+    ).read_text(encoding="utf-8")
+    for needle in (
+        "getCommandPrompt",        # PC-PT only CLI path
+        "enterCommand(cmd, mode)", # IOS two-arg form
+        "show ip arp",             # IOS ping fallback
+        "setTimeout",              # IPC-in-callback hang rule
+        "hold=0",                  # orphan-handler drain fix
+        "File→Save",               # .pkt persistence discipline
+        "lastIndexOf",             # same-source ping buffer mixing
+        "%27",                     # shim apostrophe escape
+    ):
+        assert needle in manual, f"ops manual missing: {needle}"
 
 
 def raises(exc_type, match):

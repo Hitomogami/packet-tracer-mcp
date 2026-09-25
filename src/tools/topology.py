@@ -279,6 +279,12 @@ async def pt_ping(
     transcript (Command-Prompt buffer); IOS sources fall back to the
     post-ping ARP table, because this PT build does not expose the ping
     console text for switches/routers through any script API.
+
+    Timing rules (hard-won — see pt://ops/manual):
+    - Run pings from the SAME source serially. Two parallel pings from one
+      PC share a single console buffer and the transcripts get mixed.
+    - First-packet timeouts usually mean ARP is still settling, not that the
+      path is broken — re-test after 15-30 s before diagnosing.
     """
     queue = ctx.request_context.lifespan_context.queue
     result = await queue.ping(source, destination)
@@ -287,7 +293,15 @@ async def pt_ping(
         data = result.data if isinstance(result.data, dict) else {}
         output = str(data.get("output") or result.output or "").strip()
         if output:
-            return f"Ping from {source} to {destination}:\n{output}"
+            text = f"Ping from {source} to {destination}:\n{output}"
+            lowered = output.lower()
+            if "timed out" in lowered or "100% loss" in lowered:
+                text += (
+                    "\n\n(note: some timeouts may just be ARP settling — re-test "
+                    "after 15-30 s; also make sure no other ping from this same "
+                    "source is running in parallel)"
+                )
+            return text
         return (
             f"Ping from {source} to {destination}:\n"
             "(command executed in PT, but no console text was returned — "

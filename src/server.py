@@ -58,6 +58,21 @@ def catalog_templates() -> str:
     return (_CATALOG_DIR / "templates.json").read_text(encoding="utf-8")
 
 
+@mcp.resource("pt://ops/manual")
+def ops_manual() -> str:
+    """
+    PT script-engine safety matrix and operational discipline, distilled
+    from the debugging history (MCP故障现象报告.md §6.2/§7.6/§8.6/§9.4).
+
+    Read this BEFORE bypassing the MCP tools to talk to the bridge or the
+    PT script engine directly (probes, raw JS): several legitimate-looking
+    IPC calls permanently hang the PT engine. Also covers cross-session
+    state rules (.pkt vs NVRAM, same-source ping serialization, ARP
+    settle-time retests).
+    """
+    return (_CATALOG_DIR / "ops_manual.md").read_text(encoding="utf-8")
+
+
 @mcp.resource("pt://topology/current")
 async def topology_current(ctx: Context[ServerSession, AppContext]) -> str:
     """
