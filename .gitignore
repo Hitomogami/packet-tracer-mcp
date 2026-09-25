@@ -36,3 +36,6 @@ Thumbs.db
 # Temp files
 C:/temp/pt_cmd.json
 C:/temp/pt_resp.json
+
+# Packet Tracer topology working files
+*.pkt
