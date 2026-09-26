@@ -43,7 +43,7 @@ pip install -e .
 
 This server requires **Builder-MCP.pts**, a modified version of [PTBuilder](https://github.com/kimmknight/PTBuilder) that automatically connects to the MCP server when Packet Tracer starts. No manual scripts or copy-pasting needed.
 
-**1.** Download **Builder-MCP.pts** from the [latest release](https://github.com/caixax/PTBuilder/releases/tag/release)
+**1.** Use the **`Builder-MCP.pts`** included at the repo root (or download it from the [latest release](https://github.com/caixax/PTBuilder/releases/tag/release) if you obtained this code without it)
 
 **2.** Open Packet Tracer and go to **Extensions > Scripting > Configure PT Script Modules**
 
@@ -53,7 +53,7 @@ This server requires **Builder-MCP.pts**, a modified version of [PTBuilder](http
 
 **5.** Restart Packet Tracer. The bridge starts automatically — no further action needed.
 
-> Builder-MCP.pts is a fork of [kimmknight/PTBuilder](https://github.com/kimmknight/PTBuilder) with an added MCP bridge module that auto-polls the MCP server on startup. The original Builder Code Editor functionality is preserved. Source code: [github.com/caixax/PTBuilder](https://github.com/caixax/PTBuilder)
+> Builder-MCP.pts is a fork of [kimmknight/PTBuilder](https://github.com/kimmknight/PTBuilder) with an added MCP bridge module that auto-polls the MCP server on startup. The original Builder Code Editor functionality is preserved. Source code: [github.com/caixax/PTBuilder](https://github.com/caixax/PTBuilder), also vendored in [`PTBuilder/`](PTBuilder/README.md) in this repo.
 
 ## Configuration
 
@@ -248,8 +248,30 @@ its own LAN, and configure OSPF area 0 between them.
 | Tool | Description |
 |------|-------------|
 | `pt_apply_template` | Apply a predefined topology template |
+| `pt_list_templates` | List available templates and their parameters |
 | `pt_export_topology` | Export topology as JSON |
 | `pt_validate` | Validate network configuration |
+| `pt_clear_topology` | Remove ALL devices and cables (**destructive** — requires `confirm=True`) |
+
+### Diagnostics
+| Tool | Description |
+|------|-------------|
+| `pt_show_interfaces` | Run `show ip interface brief` on a device |
+| `pt_get_running_config` | Run `show running-config` on a device |
+| `pt_ping` | Ping from a device — PC sources return the full transcript; IOS sources return the post-ping ARP table (PT does not expose ping console text for switches/routers) |
+| `pt_traceroute` | Traceroute from a device (async, same two-phase collection as ping) |
+
+## MCP resources
+
+The server also exposes read-only MCP resources (visible in clients that support resource listing):
+
+| URI | Contents |
+|-----|----------|
+| `pt://catalog/devices` | Device catalog with port lists |
+| `pt://catalog/cables` | Cable types and auto-selection rules |
+| `pt://catalog/templates` | Predefined topology templates |
+| `pt://topology/current` | Live topology state from Packet Tracer |
+| `pt://ops/manual` | **PT script-engine safety matrix and probe discipline** — read before bypassing the tools to talk to the bridge directly; several legitimate-looking IPC calls hang the PT engine permanently |
 
 ## Device aliases
 
@@ -274,22 +296,29 @@ its own LAN, and configure OSPF area 0 between them.
 
 ```
 packet-tracer-mcp/
+├── Builder-MCP.pts             # PT extension module — install this in Packet Tracer
+├── PTBuilder/                  # Vendored source of the PTBuilder fork (see PTBuilder/README.md)
 ├── src/
-│   ├── server.py              # MCP entry point + resources
-│   ├── app.py                 # FastMCP instance + lifespan
+│   ├── server.py               # MCP entry point + resources
+│   ├── app.py                  # FastMCP instance, lifespan, session instructions
 │   ├── tools/
-│   │   ├── devices.py         # Device tools
-│   │   ├── connections.py     # Connection tools
-│   │   ├── configuration.py   # CLI configuration tools
-│   │   └── topology.py        # Topology and diagnostics
+│   │   ├── devices.py          # Device tools
+│   │   ├── connections.py      # Connection tools
+│   │   ├── configuration.py    # CLI configuration tools
+│   │   └── topology.py         # Topology and diagnostics (ping/traceroute)
 │   ├── bridge/
-│   │   ├── pt_connection.py   # HTTP bridge server :54321
-│   │   ├── script_builder.py  # PTBuilder JS code generator
-│   │   └── command_queue.py   # Serialized async queue
+│   │   ├── pt_connection.py    # HTTP bridge server :54321
+│   │   ├── script_builder.py   # PTBuilder JS code generator
+│   │   └── command_queue.py    # Serialized async queue
 │   └── catalog/
 │       ├── devices.json        # Device catalog
 │       ├── cables.json         # Cable types
-│       └── templates.json      # Topology templates
+│       ├── templates.json      # Topology templates
+│       └── ops_manual.md       # pt://ops/manual — engine safety matrix
+├── tests/
+│   └── test_bridge_roundtrip.py  # Offline bridge regression tests
+├── probe_pt.py                 # Bridge probing toolkit (development/debugging)
+├── js_run.py / js_multi.py / cli_run.py / probes/
 ├── pyproject.toml
 └── LICENSE
 ```
@@ -313,6 +342,16 @@ packet-tracer-mcp/
 **Error "getPort of null"**
 - The device was not added successfully before trying to configure it
 - Verify `pt_add_device` succeeded before calling `pt_configure_pc`
+
+**`pt_ping` shows timeouts on a path that should work**
+- First packets usually time out while ARP is still settling — wait 15-30 s and re-test before diagnosing
+- Run pings from the same source one at a time: parallel pings from one PC mix their outputs in a single console buffer
+- For IOS sources (switches/routers) `pt_ping` returns the post-ping ARP table instead of the console text — that is a PT limitation, not a failure
+
+**Commands time out even though Packet Tracer is open**
+- A modal dialog (e.g. a script error popup) freezes the bridge webview — close any popup inside PT
+- After restarting Packet Tracer, a stale PT instance from before the restart may still be running — kill the old `PacketTracer.exe` (do NOT kill the `--progress-bar-server` child process; it is legitimate and respawns)
+- Before debugging the bridge or script engine directly, read the `pt://ops/manual` MCP resource — several legitimate-looking IPC calls hang the engine permanently
 
 ## License
 
