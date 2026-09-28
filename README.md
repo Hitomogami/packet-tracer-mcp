@@ -227,7 +227,7 @@ its own LAN, and configure OSPF area 0 between them.
 | `pt_add_device` | Add a device to the canvas |
 | `pt_remove_device` | Remove a device from the canvas |
 | `pt_list_devices` | List devices in the topology |
-| `pt_get_device_info` | Get detailed info about a device |
+| `pt_get_device_info` | Get detailed info about a device (per-port status, IP and MAC) |
 
 ### Connections
 | Tool | Description |

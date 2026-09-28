@@ -88,6 +88,25 @@ def _annotate_config_results(result: "CommandResult") -> "CommandResult":
     return result
 
 
+def _normalize_mac(value: Any) -> str:
+    """
+    Normalise a MAC address to uppercase Cisco dotted form (00E0.8FE4.CD36).
+
+    PT's port.getMacAddress() returns dotted triples but with inconsistent
+    letter case across device families (live-verified: lowercase on a 2960
+    SVI and some PC-PT ports, uppercase on others). Accepts
+    dotted/colon/hyphen/bare-hex input; anything that does not reduce to
+    exactly 12 hex digits is returned uppercased and untouched.
+    """
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    compact = re.sub(r"[^0-9A-F]", "", text)
+    if len(compact) == 12:
+        return ".".join(compact[i:i + 4] for i in (0, 4, 8))
+    return text
+
+
 @dataclass
 class CommandResult:
     success: bool
@@ -211,6 +230,8 @@ class CommandQueue:
 
         for dev in devices:
             dev["category"] = _CATEGORY_BY_TYPE.get(dev.get("categoryId"), "")
+            for port in dev.get("ports", []):
+                port["mac"] = _normalize_mac(port.get("mac"))
 
         return {"state": "connected", "devices": devices, "links": links}
 

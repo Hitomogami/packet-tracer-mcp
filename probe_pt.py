@@ -325,6 +325,41 @@ try{m=String(d.getIpcTerminalLine().getMode());}catch(e){m="EXC:"+e;}
 try{p=String(d.getIpcTerminalLine().getPrompt());}catch(e){p="EXC:"+e;}
 __out="mode="+m+"\nprompt="+p+"\ntl_len="+t.length+"\nTL>>>\n"+t;}
 """,
+    # §MAC: discover the MAC-address getter on port objects.
+    # Read-only: for-in key enumeration (same pattern as the "device"/"network"
+    # probes, verified hang-free) + candidate getter calls, all try/caught.
+    # No enterCommand / getCommandLine / getIpcTerminalLine anywhere (safety matrix).
+    "mac_hunt": r"""
+var __res=[];
+var __dc=0;try{__dc=ipc.network().getDeviceCount();}catch(e){}
+var __cands=["getMacAddress","getMac","getPhysicalAddress","getHardwareAddress","getBia","getMacAddr","getHwAddress"];
+for(var i=0;i<__dc;i++){
+var __d=null;try{__d=ipc.network().getDeviceAt(i);}catch(e){}
+if(!__d){continue;}
+var __dn="?";try{__dn=__d.getName();}catch(e){}
+var __pc=0;try{__pc=__d.getPortCount();}catch(e){}
+var __entry={device:__dn,portCount:__pc};
+if(__pc>0){
+var __p=null;try{__p=__d.getPortAt(0);}catch(e){}
+if(__p){
+var __nm="";try{__nm=__p.getName();}catch(e){}
+__entry.portName=__nm;
+var __ks=[];
+try{for(var k in __p){__ks.push(k);}}catch(e){__ks.push("ENUM_EXC:"+String(e).substring(0,60));}
+__entry.keys=__ks;
+var __got={};
+for(var c=0;c<__cands.length;c++){
+var __v=null;
+try{__v=__p[__cands[c]]();}catch(e){__v="EXC:"+String(e).substring(0,60);}
+__got[__cands[c]]=__v;
+}
+__entry.macTry=__got;
+}
+}
+__res.push(__entry);
+}
+__out=JSON.stringify({deviceCount:__dc,devices:__res});
+""",
     # §7.5 step 1: tl_dump WITHOUT getPrompt() (prime hang suspect) and with a
     # 60s client timeout — isolates whether getOutput() on a NON-EMPTY tl
     # buffer blocks, or whether getPrompt() was the blocker.

@@ -147,11 +147,11 @@ async def pt_get_device_info(
     """
     Get detailed information about a specific device in the topology.
 
-    Reads the live topology from PT (ports, connection and IP state). Also
-    the recommended spot-check for cross-session health: verify a known
-    completion marker (e.g. an SVI IP or a PC's configured address) before
-    trusting that prior-session configuration survived — reopening a .pkt
-    restores an old snapshot.
+    Reads the live topology from PT (ports, connection, IP and MAC state).
+    Also the recommended spot-check for cross-session health: verify a known
+    completion marker (e.g. an SVI IP, a PC's configured address or an
+    interface MAC) before trusting that prior-session configuration
+    survived — reopening a .pkt restores an old snapshot.
     """
     queue = ctx.request_context.lifespan_context.queue
     topology = await queue.get_topology()
@@ -177,7 +177,9 @@ async def pt_get_device_info(
             connected = port.get("connected", False)
             status = "connected" if connected else "free"
             ip = port.get("ip", "")
+            mac = port.get("mac", "")
             ip_str = f", ip={ip}" if ip else ""
-            lines.append(f"    - {port.get('name', port)}: {status}{ip_str}")
+            mac_str = f", mac={mac}" if mac else ""
+            lines.append(f"    - {port.get('name', port)}: {status}{ip_str}{mac_str}")
 
     return "\n".join(lines)

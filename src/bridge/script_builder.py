@@ -483,12 +483,19 @@ class ScriptBuilder:
 
         Devices: ipc.network().getDeviceCount()/getDeviceAt() with getName(),
         getModel(), getType(), getXCoordinate()/getYCoordinate() (NOT getX()!),
-        and per-port getName()/getLink()/getIpAddress().
+        and per-port getName()/getLink()/getIpAddress()/getMacAddress().
 
         Links: ipc.network().getLinkCount()/getLinkAt() with getPort1()/
         getPort2(). Port objects carry no parent-device reference, so a
         port-UUID → (device, port) map is built first and link endpoints are
         resolved through it.
+
+        getMacAddress() is live-verified on PT 8.x port objects for both
+        IOS ports (switch SVI/physical) and PC-PT ports; it returns the
+        Cisco dotted form with INCONSISTENT letter case across device
+        families (e.g. "0002.1660.5946" vs "00E0.8FE4.CD36") — the queue
+        layer normalises to uppercase dotted. getBia() returns the same
+        burned-in value and is not read separately.
         """
         return (
             'var __byU={};\n'
@@ -506,7 +513,8 @@ class ScriptBuilder:
             'if(__pu){__byU[__pu]={d:__d.getName(),p:__p.getName()};}\n'
             'var __lk=false;try{__lk=!!__p.getLink();}catch(e){}\n'
             'var __ip="";try{__ip=__p.getIpAddress()||"";}catch(e){}\n'
-            '__ports.push({name:__p.getName(),connected:__lk,ip:__ip});}\n'
+            'var __mac="";try{__mac=__p.getMacAddress()||"";}catch(e){}\n'
+            '__ports.push({name:__p.getName(),connected:__lk,ip:__ip,mac:__mac});}\n'
             'var __x=0;var __y=0;try{__x=__d.getXCoordinate();__y=__d.getYCoordinate();}catch(e){}\n'
             'var __t=null;try{__t=__d.getType();}catch(e){}\n'
             '__devices.push({name:__d.getName(),type:__d.getModel(),categoryId:__t,x:__x,y:__y,ports:__ports});}\n'

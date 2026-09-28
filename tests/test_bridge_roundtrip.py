@@ -83,7 +83,12 @@ class FakePTWebview:
             elif "getDeviceCount()" in body:
                 out = {"seq": seq, "result": {"ok": True, "data": {
                     "devices": [{"name": "switchC", "type": "3560-24PS",
-                                 "categoryId": 16, "x": 380, "y": 60, "ports": []}],
+                                 "categoryId": 16, "x": 380, "y": 60,
+                                 "ports": [{"name": "Vlan1", "connected": False,
+                                            "ip": "0.0.0.0",
+                                            # lowercase on purpose: the queue
+                                            # layer must normalise the case
+                                            "mac": "00e0.8fe4.cd36"}]}],
                     "links": [{"device1": "pc2", "port1": "FastEthernet0",
                                "device2": "switchA", "port2": "FastEthernet0/1"}],
                 }}}
@@ -143,6 +148,9 @@ def test_js_payloads_use_real_ipc_primitives():
     assert "moveToLocation(" in b.move_device("pc1", 5, 6)
     topo = b.get_topology()
     assert "getDeviceCount()" in topo and "getLinkCount()" in topo
+    # per-port MAC read: live-verified getMacAddress() on PT 8.x port objects
+    assert "getMacAddress()" in topo
+    assert "mac:__mac" in topo
     assert "__out={devices:__devices,links:__links};" in topo
     assert f"127.0.0.1:{54321}/result" in COMPAT_SHIM
     assert "reportResult=function" in COMPAT_SHIM
@@ -179,7 +187,7 @@ def test_js_payloads_use_real_ipc_primitives():
     assert "getSavedFilename()" in gaf
     for js in (b.add_device("pc1", "PC-PT", 1, 2), b.add_link("a", "Fa0", "b", "Fa0/1", "cross"),
                b.configure_pc_ip("pc1", "1.1.1.1", "255.0.0.0", "", ""), b.exec_cli("r1", ["show run"]),
-               cfg, save, sfa, gaf):
+               b.get_topology(), cfg, save, sfa, gaf):
         _check_no_line_comments("payload", js)
     _check_no_line_comments("shim", COMPAT_SHIM)
     wrapped = wrap_with_result('addDevice("x","PC-PT",1,2);', 7)
@@ -270,7 +278,26 @@ def test_bridge_request_response_roundtrip():
         assert res.success
         assert res.data["file"] == "D:/labs/topology_v2.pkt"
 
+        # 10) topology read through the queue: per-port MAC normalised to
+        # uppercase dotted (PT returns inconsistent case across families)
+        topo = await queue.get_topology()
+        assert topo["state"] == "connected"
+        assert topo["devices"][0]["ports"][0]["mac"] == "00E0.8FE4.CD36"
+
     asyncio.run(run())
+
+
+def test_normalize_mac():
+    from src.bridge.command_queue import _normalize_mac
+    assert _normalize_mac("00e0.8fe4.cd36") == "00E0.8FE4.CD36"
+    assert _normalize_mac("00-E0-8F-E4-CD-36") == "00E0.8FE4.CD36"
+    assert _normalize_mac("00:e0:8f:e4:cd:36") == "00E0.8FE4.CD36"
+    assert _normalize_mac("00E08FE4CD36") == "00E0.8FE4.CD36"
+    assert _normalize_mac("0002.1660.5946") == "0002.1660.5946"
+    assert _normalize_mac("") == ""
+    assert _normalize_mac(None) == ""
+    # non-MAC garbage passes through uppercased, never mangled
+    assert _normalize_mac("not-a-mac") == "NOT-A-MAC"
 
 
 def test_drain_endpoint_is_non_blocking():
