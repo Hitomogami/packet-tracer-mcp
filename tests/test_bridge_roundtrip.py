@@ -100,6 +100,14 @@ class FakePTWebview:
                     {"cmd": "write memory", "first": 0,
                      "out": "Building configuration...\n[OK]"},
                 ]}}}
+            elif "fileSaveAsNoPrompt(" in body:
+                # save_file_as payload → PT accepted the silent save-as
+                out = {"seq": seq, "result": {"ok": True, "data": {
+                    "saved": "D:/labs/topology_v2.pkt"}}}
+            elif "getSavedFilename()" in body:
+                # get_active_file payload → currently open .pkt path
+                out = {"seq": seq, "result": {"ok": True, "data": {
+                    "file": "D:/labs/topology_v2.pkt"}}}
             elif "started:true" in body:
                 # async_start payload (ping/traceroute phase 1)
                 out = {"seq": seq, "result": {"ok": True,
@@ -161,9 +169,17 @@ def test_js_payloads_use_real_ipc_primitives():
     assert json.dumps(["vlan 10", "name Sales"]) in cfg  # navigation cmds filtered
     save = b.save_device_config("switchC")
     assert '"!","enable"' in save and "write memory" in save
+    # save_file_as: the live-verified (path, true) arity — anything else is
+    # rejected by the IPC layer ("Invalid arguments"); path must be
+    # JSON-encoded (injection-safe) and the payload comment-free.
+    sfa = b.save_file_as("D:/labs/topo v2.pkt")
+    assert "fileSaveAsNoPrompt(" in sfa and ",true)" in sfa
+    assert '"D:/labs/topo v2.pkt"' in sfa
+    gaf = b.get_active_file()
+    assert "getSavedFilename()" in gaf
     for js in (b.add_device("pc1", "PC-PT", 1, 2), b.add_link("a", "Fa0", "b", "Fa0/1", "cross"),
                b.configure_pc_ip("pc1", "1.1.1.1", "255.0.0.0", "", ""), b.exec_cli("r1", ["show run"]),
-               cfg, save):
+               cfg, save, sfa, gaf):
         _check_no_line_comments("payload", js)
     _check_no_line_comments("shim", COMPAT_SHIM)
     wrapped = wrap_with_result('addDevice("x","PC-PT",1,2);', 7)
@@ -245,6 +261,14 @@ def test_bridge_request_response_roundtrip():
         assert res.success
         assert res.data["source"] == "ios-fallback"
         assert "10.0.0.9" in res.data["output"]
+
+        # 9) file-level save-as + active-file read (live-verified API)
+        res = await queue.save_file_as("D:/labs/topology_v2.pkt")
+        assert res.success
+        assert res.data["saved"] == "D:/labs/topology_v2.pkt"
+        res = await queue.get_active_file()
+        assert res.success
+        assert res.data["file"] == "D:/labs/topology_v2.pkt"
 
     asyncio.run(run())
 

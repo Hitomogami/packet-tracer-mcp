@@ -432,6 +432,43 @@ class ScriptBuilder:
             'out:__ctext(__o)}]};'
         )
 
+    def save_file_as(self, path: str) -> str:
+        """
+        Save the whole live PT state to a .pkt path — a true File→Save As.
+
+        Live-verified API (PT 8.2.0.0162):
+        ipc.appWindow().fileSaveAsNoPrompt(path, true) is the ONLY accepted
+        arity — one-arg, (title,path), (path,filter) and (path,int) all raise
+        "Invalid arguments for IPC call" (rejected before execution, safe).
+        The call writes the file silently (no dialog, silent overwrite of an
+        existing target) and switches PT's active working file to the new
+        path (standard Save-As semantics); getSavedFilename() can lag a few
+        seconds behind the switch, so callers must not treat an immediate
+        read as authoritative.
+
+        PT serialises volatile runtime state (uptime counters, syslog/PDU
+        timestamps), so two saves of an untouched topology still differ in
+        bytes — verify saves by file existence/mtime, never byte comparison.
+        """
+        return (
+            'var __r=null;\n'
+            'try{__r=ipc.appWindow().fileSaveAsNoPrompt(' + _js(path) + ',true);}\n'
+            'catch(e){throw new Error("fileSaveAsNoPrompt failed: "+String(e));}\n'
+            '__out={saved:' + _js(path) + '};'
+        )
+
+    def get_active_file(self) -> str:
+        """
+        Read the active .pkt path via getActiveFile().getSavedFilename().
+
+        Empty string when the topology has never been saved to disk.
+        """
+        return (
+            'var __fn="";\n'
+            'try{__fn=String(ipc.appWindow().getActiveFile().getSavedFilename());}catch(e){}\n'
+            '__out={file:__fn};'
+        )
+
     # ------------------------------------------------------------------ #
     # Topology                                                             #
     # ------------------------------------------------------------------ #

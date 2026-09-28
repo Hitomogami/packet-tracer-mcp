@@ -227,6 +227,16 @@ class CommandQueue:
         result = await self._exec(js, f"save config '{device_name}'")
         return _annotate_config_results(result)
 
+    async def save_file_as(self, path: str) -> CommandResult:
+        """Save the whole live PT state to a .pkt path (true File→Save As)."""
+        js = self._builder.save_file_as(path)
+        return await self._exec(js, f"save file as '{path}'")
+
+    async def get_active_file(self) -> CommandResult:
+        """Read the .pkt path PT currently has open (may lag after save-as)."""
+        js = self._builder.get_active_file()
+        return await self._exec(js, "get active file")
+
     # ------------------------------------------------------------------ #
     # Internal                                                             #
     # ------------------------------------------------------------------ #

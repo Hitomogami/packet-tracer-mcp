@@ -31,8 +31,10 @@ with ✓/✗; read tools return live PT data. Empty reads mean PT is disconnecte
 the SAME source must run serially: parallel same-source pings mix outputs in \
 one console buffer. First-packet timeouts are usually ARP still settling — \
 re-test after 15-30s before diagnosing a failure.
-- pt_save_config only writes device NVRAM. To survive a Packet Tracer restart \
-you must ALSO save the .pkt file in the PT GUI (File→Save).
+- pt_save_config only writes device NVRAM. To persist the .pkt itself use \
+pt_save_file_as (true File→Save As, switches PT's active file) — the GUI \
+File→Save menu works too. .pkt bytes always differ between saves (volatile \
+runtime state): verify by size/mtime, not content.
 - Across sessions, spot-check completion markers (hostname, SVI IP) via \
 pt_get_device_info / pt_get_running_config before trusting prior-session \
 state: reopening a .pkt restores whatever was last saved to disk.

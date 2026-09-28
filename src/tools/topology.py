@@ -5,6 +5,7 @@ MCP tools for topology-level operations: templates, clear, validate, diagnostics
 import asyncio
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -196,6 +197,87 @@ async def pt_export_topology(
         },
     }
     return json.dumps(export, indent=2)
+
+
+@mcp.tool()
+async def pt_get_active_file(
+    ctx: Context[ServerSession, AppContext] = None,
+) -> str:
+    """
+    Return the .pkt file path Packet Tracer currently has open/active.
+
+    Empty result means the topology has never been saved to disk.
+    Note: after pt_save_file_as, PT can take a few seconds to report the
+    new active file — re-check after a short wait.
+    """
+    queue = ctx.request_context.lifespan_context.queue
+    result = await queue.get_active_file()
+    if result.success:
+        data = result.data if isinstance(result.data, dict) else {}
+        file = str(data.get("file") or "").strip()
+        if file:
+            return f"Active file: {file}"
+        return "No active file — the topology has never been saved to disk."
+    return f"✗ Failed to read active file: {result.error}"
+
+
+@mcp.tool()
+async def pt_save_file_as(
+    file_path: Annotated[str, Field(
+        description=(
+            "Destination .pkt path, e.g. D:/labs/topology_v2.pkt. "
+            "Overwrites an existing file silently. '.pkt' is appended when missing."
+        )
+    )],
+    ctx: Context[ServerSession, AppContext] = None,
+) -> str:
+    """
+    Save the current Packet Tracer architecture to a .pkt file — a true
+    File→Save As performed by PT itself, capturing the complete live state
+    (devices, cables, per-port IPs, NVRAM configs, PT-internal state),
+    including changes not yet saved in the GUI.
+
+    Standard Save-As semantics: PT switches its active working file to the
+    new path (pt_get_active_file may need a few seconds to reflect it).
+    Verify the result by the returned on-disk size/mtime, never by comparing
+    .pkt bytes — PT serialises volatile runtime state (uptime counters,
+    syslog timestamps), so every save differs even with no changes.
+
+    Device config changes should be committed first with pt_save_config so
+    the saved file contains the final startup-configs.
+    """
+    queue = ctx.request_context.lifespan_context.queue
+
+    # PT (Qt) accepts both slash styles; forward slashes match what its own
+    # APIs (getSavedFilename) return, so normalise to those.
+    normalized = str(file_path).replace("\\", "/").strip()
+    if not normalized:
+        return "✗ file_path is empty"
+    if not normalized.lower().endswith(".pkt"):
+        normalized += ".pkt"
+
+    result = await queue.save_file_as(normalized)
+    if not result.success:
+        return f"✗ Failed to save as '{normalized}': {result.error}"
+
+    # PT-side success is silent (no exception even for bad directories?) —
+    # anchor the verdict in the real file on disk instead of trusting it.
+    target = Path(normalized)
+    if target.exists():
+        stat = target.stat()
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime))
+        return (
+            f"✓ Saved current PT architecture to {normalized}\n"
+            f"On disk: {stat.st_size} bytes, mtime {stamp}\n"
+            "(PT switched its active file to the new path — standard "
+            "Save-As semantics; reopen the previous file if you want to "
+            "keep working on it. Bytes always differ between saves due to "
+            "volatile runtime state — size/mtime are the anchor, not content.)"
+        )
+    return (
+        f"⚠ PT reported success but '{normalized}' was not found on disk — "
+        "check the directory exists and the path is writable."
+    )
 
 
 @mcp.tool()

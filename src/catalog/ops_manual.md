@@ -23,6 +23,7 @@
 - **IOS**：`enterCommand(cmd, mode)` 返回 `{first: 状态码, second: 同步输出}`；ping/traceroute 确实执行（`.first=0`）但**异步输出不暴露给任何脚本 API**（GUI 控制台、TerminalLine、telnet 会话均无）→ 用 `show ip arp` 兜底做间接证据。
 - **PC-PT**：唯一 CLI 入口 `getCommandPrompt()`，`enterCommand` 为**单参数**形态；输出累积进 `getOutput()`，ping 输出滞后 15-30s 进缓冲（两阶段采集的依据）。
 - IOS 输出提取助手为 `__ctext()`（shim 内定义）；自写 JS 必须自带或 prepend `_CTEXT_JS`，否则 ReferenceError（`25b89dd` 的教训）。
+- **文件 API（2026-09-28 实测定版）**：`ipc.appWindow().fileSaveAsNoPrompt(path, true)` 是唯一可用签名——单参、`(title,path)`、`(path,filter)` 均被 IPC 层拒绝（"Invalid arguments"，拒绝发生在执行前，安全）；调用静默写盘（无对话框、静默覆盖）并**切换活动文件**（标准另存为语义），`getSavedFilename()` 滞后数秒才反映切换，勿以立即回读为准。活动文件路径读 `getActiveFile().getSavedFilename()`。**`.pkt` 每次保存字节必不同**（uptime 计时器、syslog/PDU 时间戳等易变态被序列化；实测零操作间隔 22s 两次保存差 19 字节）——校验保存与否只看存在性/size/mtime，严禁字节比对。
 
 ## 3. 引擎"挂死"的识别与恢复
 
@@ -40,6 +41,6 @@
 
 1. **同源 ping 必须串行**：`async_collect` 以 `lastIndexOf(命令)` 锚定截取缓冲增量，同源并发两条 ping 会在转录里混入另一条的输出；异源可并行。
 2. **首包 ARP 超时属正常**：ping/traceroute 失败先等 15-30s 复测再下结论。
-3. **`write memory` ≠ `.pkt` 落盘**：NVRAM 只保证设备配置进入 PT 内存态；实验完成必须 PT GUI 内 File→Save，否则下次打开是旧快照。
+3. **`write memory` ≠ `.pkt` 落盘**：NVRAM 只保证设备配置进入 PT 内存态；实验完成用 `pt_save_file_as`（或 PT GUI 内 File→Save）落盘，否则下次打开是旧快照。
 4. **跨会话先抽查完成态标志**（hostname、SVI IP、PC 端口 IP），用 `pt_get_device_info` / `pt_get_running_config` 判断 `.pkt` 新旧，不要假设上次会话的内存配置还在。
 5. **"成功 + 空输出" ≠ "代码陈旧"**：IOS 兜底若代码旧会以 `✗ Ping failed: ReferenceError` 呈现；`success + 空` 说明新代码在跑、空是环境数据（如 ARP 表真空）。
